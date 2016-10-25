@@ -1,4 +1,4 @@
-## Note: **Hosts and ports are now hardcoded**
+## Update: **Troll must be started on server port 10003 for acks. Hosts and ports are now hardcoded**
 
 Ensure that the client machine is 'eta' and that server machine is 'beta'.
 
