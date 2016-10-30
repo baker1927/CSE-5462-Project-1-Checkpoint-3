@@ -82,6 +82,25 @@ struct node *findNode(struct node *ptr, int start)
         return NULL;
 }
 
+/* Finds and returns node with specific start value */
+/* Does not remove node */
+struct node *findNodeBySeq(struct node *ptr, int seq)
+{
+
+	ptr = ptr->next;
+
+	while (ptr != NULL)
+	{
+
+		if (ptr->seq == seq)
+		{
+			return ptr;
+		}
+		ptr = ptr->next;
+	}
+	return NULL;
+}
+
 /* Prints list start indexes for debugging purposes */
 void printList(struct node *ptr)
 {
