@@ -151,11 +151,15 @@ int main(int argc, char *argv[])
 		FD_SET(local_sock, &selectmask);
 
 		int seq = 0;
+		int sw = 20;
+		int sf = 0;
+		int sn = 0;
 
 		/* Begin send loop */
 		for(;;) {
 			
 				ack = 0;
+
 				/* Wait for data on socket from cleint */
 				if (FD_ISSET(local_sock, &selectmask)) {
 				
@@ -171,50 +175,16 @@ int main(int argc, char *argv[])
 				
 				/* Update aux list info */
 				struct timespec temp_t;
-				insertNode(temp, current, next, seq, amtFromClient, 0, temp_t);
+				insertNode(temp, current, next, 0, amtFromClient, seq, temp_t);
 				
 				printf("Creating packet: %d\n", seq);
 
-				/* Node to get info on current buffer slot */
-				struct node *ptr;
-				ptr = (struct node *)malloc(sizeof(struct node));
-				ptr -> next = NULL;
-				ptr = findNode(temp, current);
-				int bytesToSend = ptr->bytes;
-				
-				/* Copy payload from circular buffer to tcpd packet */
-				bcopy(GetFromBuffer(), packet.body, bytesToSend); // removing from c buffer
-				printf("Copied data from buffer slot: %d\n", current);
-				
-				/* Prepare packet */
-				packet.bytes_to_read = bytesToSend;
-				packet.chksum = 0;
-				packet.seq = seq;
-				packet.startNo = current;
-					
-				/* Calculate checksum */				
-				chksum = crcFast((char *)&packet,sizeof(packet));
-				printf("Checksum of data: %X\n", chksum);
-	
-				/* Attach checksum to troll packet */
-				/* This is checksum with chksum zerod out. Must do same on rec end */
-				packet.chksum = chksum;
-	
-				/* Prepare troll wrapper */
-				message.msg_pack = packet;
-				message.msg_header = destaddr;
+				/*Begin send function*/
 
-				/***************************************/
+				amtToTroll = sendPacket(seq, temp, troll_sock, trolladdr, destaddr);
+				seq = seq + 1;
 
-				struct timespec startTime;
-				clock_gettime(CLOCK_MONOTONIC, &startTime);
-				ptr->time = startTime;
-
-				/***************************************/
-	
-				/* Send packet to troll */
-
-				amtToTroll = sendto(troll_sock, (char *)&message, sizeof message, 0, (struct sockaddr *)&trolladdr, sizeof trolladdr);
+				/* End send function */
 
 				printf("Sent message to troll on port: 10001\n");
 				if (amtToTroll != sizeof message) {
@@ -274,7 +244,7 @@ int main(int argc, char *argv[])
 				sendto(local_sock, (char*)&ftpcAck, sizeof ftpcAck, 0, (struct sockaddr *)&clientack, sizeof clientack);
 				/* For bookkeeping/debugging */
 				total += amtToTroll;
-				seq = seq + 1;
+				
 				
 				/* maybe unnesscary but working so why not? */
 				FD_ZERO(&selectmask);
@@ -477,3 +447,46 @@ int main(int argc, char *argv[])
 	rto = est_rtt + 4.0 * est_var; 
 	return rto;
 }*/
+
+int sendPacket(int seq, struct node *temp, int troll_sock, struct sockaddr_in trolladdr, struct sockaddr_in destaddr) {
+	MyMessage message;		        /* Packets sent to troll process */
+	Packet packet;			        /* Packets sent to server tcpd */
+
+	/* Node to get info on current buffer slot */
+	struct node *ptr;
+	ptr = (struct node *)malloc(sizeof(struct node));
+	ptr->next = NULL;
+	ptr = findNodeBySeq(temp, seq);
+
+	int bytesToSend = ptr->bytes;
+
+	/* Copy payload from circular buffer to tcpd packet */
+	bcopy(GetFromBufferByIndex(ptr->start), packet.body, bytesToSend); // removing from c buffer
+	printf("Copied data from buffer slot: %d\n", ptr->start);
+
+	/* Prepare packet */
+	packet.bytes_to_read = bytesToSend;
+	packet.chksum = 0;
+	packet.seq = seq;
+	//packet.startNo = current;
+
+	/* Calculate checksum */
+	int chksum = crcFast((char *)&packet, sizeof(packet));
+	printf("Checksum of data: %X\n", chksum);
+
+	/* Attach checksum to troll packet */
+	/* This is checksum with chksum zerod out. Must do same on rec end */
+	packet.chksum = chksum;
+
+	/* Prepare troll wrapper */
+	message.msg_pack = packet;
+	message.msg_header = destaddr;
+
+	struct timespec startTime;
+	clock_gettime(CLOCK_MONOTONIC, &startTime);
+	ptr->time = startTime;
+
+
+	return sendto(troll_sock, (char *)&message, sizeof message, 0, (struct sockaddr *)&trolladdr, sizeof trolladdr);
+
+}
