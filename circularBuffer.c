@@ -30,6 +30,23 @@ char * GetFromBuffer()
     return p;
 }
 
+char * GetFromBufferByIndex(int index)
+{
+	char *p;
+
+	if (!active) {
+		return NULL;
+	}
+	
+	p = cBuffer[index];
+	/*
+	start = (start + MSS) % CBUFFERSIZE;
+
+	active = active - MSS;
+	*/
+	return p;
+}
+
 int cBufferFull() {
 	if (start == 63000) {
 		return 1;
