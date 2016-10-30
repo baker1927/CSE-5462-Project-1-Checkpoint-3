@@ -106,8 +106,11 @@ struct node
 void insertNode(struct node *ptr, int start, int nextB, int pack, int bytes, int seq, struct timespec time);
 void deleteNode(struct node *ptr, int start);
 void printList(struct node *ptr);
+struct node *findNodeBySeq(struct node *ptr, int seq);
 struct node *findNode(struct node *ptr, int start);
 double calculate_rto(double sample_rtt);
+char * GetFromBufferByIndex(int index);
+int sendPacket(int seq, struct node *temp, int troll_sock, struct sockaddr_in trolladdr, struct sockaddr_in destaddr);
 
 /* circular buffer properties */
 static char *cBuffer[CBUFFERSIZE];
