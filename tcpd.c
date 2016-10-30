@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
 		double rto = 3.0;								/* RTT and TRO calcs */
 		int current = 0;                                /* Circular buffer indexing vars */
 		int next = 0;									/* Circular buffer indexing vars */
-		int ack = 0; 									/* Circular buffer indexing vars */
+		int ack, ackType = 0; 									/* Circular buffer indexing vars */
 		/* Init linked list aux structure */
 		struct node *start,*temp;
         start = (struct node *)malloc(sizeof(struct node)); 
@@ -154,15 +154,21 @@ int main(int argc, char *argv[])
 		int sw = 20;
 		int sf = 0;
 		int sn = 0;
+		int restart = 0;
+
 
 		/* Begin send loop */
 		for(;;) {
 			
-				ack = 0;
+				
 
 				/* Wait for data on socket from cleint */
 				if (FD_ISSET(local_sock, &selectmask)) {
 				
+				
+				// GET DATA FRROM CLIENT PROCESS
+
+
 				/* Receive data from ftpc and copy to local buffer */
 				amtFromClient = recvfrom(local_sock, buffer, sizeof(buffer), MSG_WAITALL, NULL, NULL);
 				printf("Received data from client.\n");
@@ -175,71 +181,114 @@ int main(int argc, char *argv[])
 				
 				/* Update aux list info */
 				struct timespec temp_t;
-				insertNode(temp, current, next, 0, amtFromClient, seq, temp_t);
-				
-				printf("Creating packet: %d\n", seq);
+				insertNode(temp, current, next, 0, amtFromClient, sn, temp_t);
 
-				/*Begin send function*/
 
-				amtToTroll = sendPacket(seq, temp, troll_sock, trolladdr, destaddr);
-				seq = seq + 1;
+				// SENDING 
 
-				/* End send function */
+				if (sn - sf >= sw) {
+					restart = 1;
+				} else {
+					printf("Creating packet: %d\n", sn);
 
-				printf("Sent message to troll on port: 10001\n");
-				if (amtToTroll != sizeof message) {
-					perror("totroll sendto");
-					exit(1);
+					/*Begin send function*/
+
+					amtToTroll = sendPacket(sn, temp, troll_sock, trolladdr, destaddr);
+					sn = sn + 1;
+
+					//START TIMER HERE for sn
+
+					/* End send function */
+
+					printf("Sent message to troll on port: 10001\n");
+					if (amtToTroll != sizeof message) {
+						perror("totroll sendto");
+						exit(1);
+					}
 				}
+				
 				
 				/* Get ack */
-				//recvfrom(ackSock, &ack, sizeof ack, MSG_WAITALL, NULL, NULL);	
+
 				int len = sizeof ackAddr;
-	
-				recvfrom(ackSock, (char *)&ackMessage, sizeof ackMessage, 0,
-					(struct sockaddr *)&ackAddr, &len);
-				ack = ackMessage.msg_pack.ack;			
-				printf("Acknowledgement Recieved: %d**\n", ack);
-				
-				/*****************/
-				
-				struct timespec endTime;
-				clock_gettime(CLOCK_MONOTONIC, &endTime);
-
-				//find the node that represents the packet that was just acked
-				struct node * acked_node = findNode(temp, ack);
-				
-				if (NULL != acked_node) {				
-						
-					double elapsed = ( endTime.tv_sec - acked_node->time.tv_sec )
-  					+ ( endTime.tv_nsec - acked_node->time.tv_nsec )
-  					/ 1E9;
-					
-					if (firstSend == 1){
-						est_rtt = elapsed;
-						est_var = elapsed/2.0;
-						rto = est_rtt + 4.0 * est_var;
-						firstSend = 0;
-					} else {
-						//calculate_rto(elapsed);
-						est_rtt = (0.875 * elapsed) + (1 - 0.875) * est_rtt;
-						est_var = (1 - 0.25) * est_var + 0.25 * abs((est_rtt - elapsed));
-						rto = est_rtt + 4.0 * est_var; 
-						
-					}	
-
-					printf("Time Elapsed: %f\n", elapsed);
-					//printf("Ack: %d Node: %d\n", ack, acked_node->start);
-					printf("RTO: %.9f\n", rto);
-					printf("RTT: %.9f\n", est_rtt);
-					printf("VAR: %.9f\n\n", est_var);
-					
-				} else {
-					printf("ACKED NODE IS NULL\n");
+				// This sets a time out on recv
+				struct timeval tv;
+				tv.tv_sec = 0;
+				tv.tv_usec = 100000;
+				if (setsockopt(ackSock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+					perror("Error");
 				}
-				
-				
-				
+
+				if (recvfrom(ackSock, (char *)&ackMessage, sizeof ackMessage, 0,
+					(struct sockaddr *)&ackAddr, &len) > 0) {
+
+					ack = ackMessage.msg_pack.ack;
+					ackType = ackMessage.msg_pack.ackType;
+					printf("Acknowledgement Recieved: %d**\n", ack);
+
+
+					if (ackType == 0) { //NAK
+						if ((ack >= sf) && (ack <= sn)) {
+							amtToTroll = sendPacket(ack, temp, troll_sock, trolladdr, destaddr);
+							//START TIMER HERE for ack
+						}
+					}
+
+					if (ackType == 1) { //ACK - SUCCESS
+						if ((ack >= sf) && (ack <= sn)) {
+
+							struct timespec endTime;
+							clock_gettime(CLOCK_MONOTONIC, &endTime);
+
+							//find the node that represents the packet that was just acked
+							struct node * acked_node = findNodeBySeq(temp, ack);
+
+							if (NULL != acked_node) {
+
+								double elapsed = (endTime.tv_sec - acked_node->time.tv_sec)
+									+ (endTime.tv_nsec - acked_node->time.tv_nsec)
+									/ 1E9;
+
+								if (firstSend == 1) {
+									est_rtt = elapsed;
+									est_var = elapsed / 2.0;
+									rto = est_rtt + 4.0 * est_var;
+									firstSend = 0;
+								}
+								else {
+									//calculate_rto(elapsed);
+									est_rtt = (0.875 * elapsed) + (1 - 0.875) * est_rtt;
+									est_var = (1 - 0.25) * est_var + 0.25 * abs((est_rtt - elapsed));
+									rto = est_rtt + 4.0 * est_var;
+
+								}
+
+								printf("Time Elapsed: %f\n", elapsed);
+								//printf("Ack: %d Node: %d\n", ack, acked_node->start);
+								printf("RTO: %.9f\n", rto);
+								printf("RTT: %.9f\n", est_rtt);
+								printf("VAR: %.9f\n\n", est_var);
+
+							}
+							else {
+								printf("ACKED NODE IS NULL\n");
+							}
+
+							while (sf < ack) {
+
+								// STOP TIMER FOR sf
+								sf = sf + 1;
+
+							}
+						}
+					}
+
+					//CHECK FOR TIMEOUT HERE
+					/* if (recvfrom timer) {
+						resend(seq from timer)
+					*/
+
+				}
 				/* Send ack to ftpc after data written to buffer */
 				sendto(local_sock, (char*)&ftpcAck, sizeof ftpcAck, 0, (struct sockaddr *)&clientack, sizeof clientack);
 				/* For bookkeeping/debugging */
@@ -254,7 +303,7 @@ int main(int argc, char *argv[])
 		/* Reset socket descriptor for select */
 		FD_ZERO(&selectmask);
 		FD_SET(local_sock, &selectmask);
-		}
+	}
 		
 	/* Run on server side */
 	} else if (atoi(argv[1]) == 0) {
@@ -356,6 +405,10 @@ int main(int argc, char *argv[])
 		int current = 0;
 		int next = 0;
 		int ack = 0;
+
+		int rn = 0;
+		int nakSent = 0;
+		int ackNeeded = 0;
 	
 		/* Begin recieve loop */
 		for(;;) {
@@ -375,7 +428,7 @@ int main(int argc, char *argv[])
 				}
 
 				printf("Recieved data from troll.\n");
-				
+
 				/* Copy packet locally */
 				bcopy(&message.msg_pack, &packet, sizeof(packet));
 				/* get checksum from packet */
@@ -389,46 +442,79 @@ int main(int argc, char *argv[])
 				chksum = crcFast((char *)&packet, sizeof(packet));
 				printf("Checksum of data: %X\n", chksum);
 
-				/* Compare expected checksum to one caluclated above. Print Error if conflict. */
-				if (chksum != recv_chksum) {
-					printf("CHECKSUM ERROR: Expected: %X Actual: %X\n", recv_chksum, chksum);
-				}
-				
-				/* SEND ACK TO CLIENT TCPD */
-				
-				int ack = message.msg_pack.startNo;
-				/* Prepare troll wrapper */
-				ackMessage.msg_pack = ackPacket;
-				ackMessage.msg_header = masterAck;
-				ackPacket.ack = ack;
-				sendto(troll_sock, (char *)&ackMessage, sizeof ackMessage, 0, (struct sockaddr *)&servertrolladdr, sizeof servertrolladdr);
-				//ack = packet.startNo;
-				//sendto(local_sock, &ack, sizeof(ack), 0, (struct sockaddr *)&masterAck, sizeof masterAck);
+				/*Get packet sequence*/
+				int seq = packet.seq;
 
-				/* Add body to circular buffer */
-				AddToBuffer(packet.body);
-				current = getStart();
-				next = getEnd();
-				printf("Copied data to buffer slot: %d\n", current);
-				struct timespec temp_t_2;
-				insertNode(temp, current, next, 0, packet.bytes_to_read, 0, temp_t_2);
+
+				/* Compare expected checksum to one caluclated above. Print Error if conflict. */
+				if ((chksum != recv_chksum) && (nakSent == 0)) {
+					printf("CHECKSUM ERROR: Expected: %X Actual: %X\nSending NAK\n", recv_chksum, chksum);
+					int ack = message.msg_pack.startNo;
+					/* Prepare troll wrapper */
+					ackMessage.msg_pack = ackPacket;
+					ackMessage.msg_header = masterAck;
+					ackPacket.ack = rn;
+					ackPacket.ackType = 0; //NAK
+					sendto(troll_sock, (char *)&ackMessage, sizeof ackMessage, 0, (struct sockaddr *)&servertrolladdr, sizeof servertrolladdr);
+
+					nakSent = 1;
+				// PACKET IS GOOD
+				} else if ((seq == rn)) {
+					
+
+					/* Add body to circular buffer */
+					AddToBuffer(packet.body);
+					current = getStart();
+					next = getEnd();
+					printf("Copied data to buffer slot: %d\n", current);
+					struct timespec temp_t_2;
+					insertNode(temp, current, next, 0, packet.bytes_to_read, 0, temp_t_2);
 				
-				/* Node to get info on current buffer slot */
-				struct node *ptr;
-				ptr = (struct node *)malloc(sizeof(struct node));
-				ptr -> next = NULL;
-				ptr = findNode(temp, current);
-				int bytesToSend = ptr->bytes;
+					/* Node to get info on current buffer slot */
+					struct node *ptr;
+					ptr = (struct node *)malloc(sizeof(struct node));
+					ptr -> next = NULL;
+					ptr = findNode(temp, current);
+					int bytesToSend = ptr->bytes;
 				
-				/* Forward packet body to server */
-				amtToServer = sendto(local_sock, (char *)GetFromBuffer(), bytesToSend, 0, (struct sockaddr *)&destaddr, sizeof destaddr);
-				if (amtToServer < 0) {
-					perror("totroll sendto");
-					/* To keep daemon running for grable demo */
-					//exit(1);
+					/* Forward packet body to server */
+					amtToServer = sendto(local_sock, (char *)GetFromBuffer(), bytesToSend, 0, (struct sockaddr *)&destaddr, sizeof destaddr);
+					if (amtToServer < 0) {
+						perror("totroll sendto");
+						/* To keep daemon running for grable demo */
+						//exit(1);
+					}
+					printf("Copied data from buffer slot: %d\n", current);
+					printf("Sent data to server.\n\n");
+
+					rn = rn + 1;
+
+					/* SEND ACK TO CLIENT TCPD */
+
+					int ack = message.msg_pack.startNo;
+					/* Prepare troll wrapper */
+					ackMessage.msg_pack = ackPacket;
+					ackMessage.msg_header = masterAck;
+					ackPacket.ack = rn;
+					ackPacket.ackType = 1;
+					sendto(troll_sock, (char *)&ackMessage, sizeof ackMessage, 0, (struct sockaddr *)&servertrolladdr, sizeof servertrolladdr);
+					//ack = packet.startNo;
+					//sendto(local_sock, &ack, sizeof(ack), 0, (struct sockaddr *)&masterAck, sizeof masterAck);
+
 				}
-				printf("Copied data from buffer slot: %d\n", current);
-				printf("Sent data to server.\n\n");
+				else {
+					int ack = message.msg_pack.startNo;
+					/* Prepare troll wrapper */
+					ackMessage.msg_pack = ackPacket;
+					ackMessage.msg_header = masterAck;
+					ackPacket.ack = rn;
+					ackPacket.ackType = 0; //NAK
+					sendto(troll_sock, (char *)&ackMessage, sizeof ackMessage, 0, (struct sockaddr *)&servertrolladdr, sizeof servertrolladdr);
+
+					nakSent = 1;
+				}
+				
+				
 				
 				/* Bookkeeping/Debugging */
 				total += amtFromTcpd;
