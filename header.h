@@ -79,6 +79,7 @@ typedef struct Packet {
  int chksum;
  int packNo;
  int startNo;
+ int ackType; //0 for NAK, 1 for ACK
 } Packet;
 
 /* tcpd to troll packet */
