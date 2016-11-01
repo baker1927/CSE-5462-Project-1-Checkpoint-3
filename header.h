@@ -86,6 +86,7 @@ typedef struct Packet {
 typedef struct MyMessage {
 	struct sockaddr_in msg_header;
 	struct Packet msg_pack;
+	int ackNo;
 	//int flag;	
 } MyMessage;
 
@@ -104,7 +105,7 @@ struct node
 };
 
 /* aux list prototypes */
-void insertNode(struct node *ptr, int start, int nextB, int pack, int bytes, int seq, struct timespec time);
+void insertNode(struct node *ptr, int start, int nextB, int pack, int bytes, int seq, int ack, struct timespec time);
 void deleteNode(struct node *ptr, int start);
 void printList(struct node *ptr);
 struct node *findNodeBySeq(struct node *ptr, int seq);
@@ -120,9 +121,12 @@ static int end = 0;
 static int active = 0;
 
 char * GetFromBuffer();
-void AddToBuffer(char *p);
+int AddToBuffer(char *p, struct node *temp);
 int getStart();
 int getEnd();
+void displayBuffer();
+int cBufferReady(struct node *temp);
+int AddToBufferForServer(char *p);
 
 #endif
 
