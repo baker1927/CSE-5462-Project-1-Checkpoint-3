@@ -17,14 +17,15 @@
 #include <unistd.h>
 #define WAIT_TIME 1
 #define LISTENING_PORT 9090
+#define ETA "164.107.113.23"
 
 
 
 /* This is the definition for each node within our delta timer linked list */
 typedef struct timer_node {
-	float time;
-	//int port;
-	int p_num;
+	double time;
+	int port;
+	int seq_num;
 	struct timer_node* next;
 	struct timer_node* prev;
 } timer_node_t;
@@ -32,12 +33,12 @@ typedef struct timer_node {
 
 
 /* These are the prototypes for the functions defined within this file */
-void delete_node(int packet);
-void add_node(float seconds, int packet);
+void delete_node(int seq_num);
+void add_node(double timeout, int seq_num, int port);
 int insert_node(timer_node_t** head, timer_node_t* node);
 int remove_node(int del_val, timer_node_t** head);
 void print_full_list(timer_node_t* head);
-timer_node_t* create_node(float time, int port/*, int p_num*/);
+timer_node_t* create_node(double time, int seq_num, int port);
 void destroy_node(timer_node_t* node);
 
 
@@ -56,7 +57,7 @@ void destroy_node(timer_node_t* node) {
 
 /* This method creates a new node for our linked list with the supplied criteria.
    It returns a pointer to the newly created node */
-timer_node_t* create_node(float time, int p_num/*, int port*/) {
+timer_node_t* create_node(double time, int seq_num, int port) {
 	timer_node_t* node = (timer_node_t*)malloc(sizeof(timer_node_t));
 	if (NULL == node) {
 		printf("%s\n", "ERROR: Failed to allocate memory for a new timer node");
@@ -64,8 +65,8 @@ timer_node_t* create_node(float time, int p_num/*, int port*/) {
 		node->next = NULL;
 		node->prev = NULL;
 		node->time = time;
-		node->p_num = p_num;
-		//node->port = port;
+		node->seq_num = seq_num;
+		node->port = port;
 	}
 	return node;
 }
@@ -78,8 +79,8 @@ void print_full_list(timer_node_t* list) {
 		printf("%s\n", "The delta timer list is empty");
 	} else {
 		while(NULL != list) {
-			printf("%s%.2f%s%d%s\n", "NODE:: time: ", list->time, " p_num: ", 
-				list->p_num," ---> ");
+			printf("%s%.2f%s%d%s\n", "NODE:: time: ", list->time, " seq_num: ", 
+				list->seq_num," ---> ");
 			list = list->next;
 		}
 	}
@@ -133,7 +134,7 @@ int insert_node(timer_node_t** head, timer_node_t* node) {
 
 
 
-/* This function removes a node with a particular packet number from the list.
+/* This function removes a node with a particular seq_num number from the list.
    It returns 1 for a successful removal and 0 otherwise */
 int remove_node(int del_val, timer_node_t** head) {
 	//The list is empty
@@ -143,7 +144,7 @@ int remove_node(int del_val, timer_node_t** head) {
 	}
 	timer_node_t* trash = NULL;
 	//The node to be removed is the head node
-	if ((*head)->p_num == del_val) {
+	if ((*head)->seq_num == del_val) {
 		trash = *head;
 		*head = (*head)->next;
 		//Just in case we have removed the only node in the list
@@ -158,12 +159,12 @@ int remove_node(int del_val, timer_node_t** head) {
 	}
 
 	timer_node_t* tracker = *head;
-	while (NULL != tracker && tracker->p_num != del_val) {
+	while (NULL != tracker && tracker->seq_num != del_val) {
 		tracker = tracker->next;
 	}
 	//The node wasn't found
 	if (NULL == tracker) {
-		printf("%s%d%s\n", "ERROR: The node with packet number: ", del_val,  
+		printf("%s%d%s\n", "ERROR: The node with seq_num number: ", del_val,  
 			" was never found. Failed to delete.");
 		return 0;
 	}
@@ -183,17 +184,17 @@ int remove_node(int del_val, timer_node_t** head) {
 
 
 /* This function is meant as a wrapper around inser_node(). It contains 
-   additional print statements for work flow traking */
-void add_node(float seconds, int packet) {
-	timer_node_t* node = create_node(seconds, packet);
+   additional print statements for work flow tracking */
+void add_node(double timeout, int seq_num, int port) {
+	timer_node_t* node = create_node(timeout, seq_num, port);
 	int check = insert_node(&head, node);
 
 	if (check == 0) {
 		printf("%s%.2f%s%d\n", "There was an issue adding the node with " 
-			"seconds: ", seconds, " and packet number: ", packet);
+			"timeout: ", timeout, " and seq_num number: ", seq_num);
 	} else {
-		printf("%s%.2f%s%d%s\n", "Node with seconds: ", seconds, " and packet "
-			"number: ", packet, " added successfully");
+		printf("%s%.2f%s%d%s\n", "Node with timeout: ", timeout, " and seq_num "
+			"number: ", seq_num, " added successfully");
 	}
 
 	printf("%s\n\n", "State of the delta timer:");
@@ -205,14 +206,14 @@ void add_node(float seconds, int packet) {
 
 /* This function is meant as a wrapper around remove_node(). It contains
    additional print statements for work flow tracking */
-void delete_node(int packet) {
-	int check = remove_node(packet, &head);
+void delete_node(int seq_num) {
+	int check = remove_node(seq_num, &head);
 
 	if (check == 0) {
 		printf("%s%d%s\n", "There was an issue deleting the node with " 
-			"packet number: ", packet, ". See above message.");
+			"seq_num number: ", seq_num, ". See above message.");
 	} else {
-		printf("%s%d%s\n", "Node with packet number: ", packet, " deleted "
+		printf("%s%d%s\n", "Node with seq_num number: ", seq_num, " deleted "
 			"successfully");	
 	}
 
@@ -228,6 +229,7 @@ int main(int argc, char *argv[]) {
 	/* Create a socket for the timer to listen on */
 	int sock;
 	struct sockaddr_in sin_addr;
+	struct sockaddr_in timeout_response;
 
 	if((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
     	perror("Error opening socket");
@@ -244,48 +246,88 @@ int main(int argc, char *argv[]) {
       	exit(1);
     }
 
-    //The definition of the message received by the driver
+    //Set up a partial address (no port) to send time out messages to
+	bzero((char *)&timeout_response, sizeof timeout_response);
+	timeout_response.sin_family = AF_INET;
+	timeout_response.sin_addr.s_addr = inet_addr(ETA);
+	memset(&(sin_addr.sin_zero), '\0', 8);
+
+    //The definition of the message received from the driver
     typedef struct recvd {
     	int type;
-    	int p_num;
-    	float time;
+    	int seq_num;
+    	double time;
+    	int port;
     } recv_msg_t;
 
     recv_msg_t recv_msg;
     bzero((char*)&recv_msg, sizeof(recv_msg));
 
-     fd_set read_set;
+	//The definition of the message send to the tcpd client upon node timeout
+    typedef struct send {
+    	int flag;
+    	int seq_num;
+    } send_msg_t;
+
+	send_msg_t send_msg;
+    bzero((char*)&send_msg, sizeof(send_msg));  	
+
+    fd_set read_set;
 
     /* Create the variables that will be used for time keeping */
-    time_t start_time, end_time, global_start_time;
+    struct timespec start_time, end_time, global_start_time;
 	struct timeval wait_timer;
-	wait_timer.tv_sec = WAIT_TIME;
-	wait_timer.tv_usec = 0;
+	wait_timer.tv_sec = 0;
+	wait_timer.tv_usec = 50000;
 
-	time(&global_start_time);
+
+	clock_gettime(CLOCK_MONOTONIC, &global_start_time);
 	for(;;) {
 		FD_ZERO(&read_set);
     	FD_SET(sock, &read_set);
-		time(&start_time);
+
+    	/*TAKE TIME. START WAITING TO RECEIVE MESSAGE OR TIMEOUT*/
+		clock_gettime(CLOCK_MONOTONIC, &start_time);
 		if (select(FD_SETSIZE, &read_set, NULL, NULL, &wait_timer) < 0) {
 			fprintf(stderr, "%s\n", "There was an issue with select()");
 			exit(1);
 		}
 
-		time(&end_time);
-		printf("%s%f\n", "------------------CURRENT TIME----------------", 
-			difftime(end_time, global_start_time));
+		/*WE HAVE EITHER RECEIVED A MESSAGE OR TIMED OUT. GET TIME*/
+		clock_gettime(CLOCK_MONOTONIC, &end_time);
+		/*printf("%s%f\n", "------------------CURRENT TIME----------------", 
+			 ((end_time.tv_sec - global_start_time.tv_sec )
+  					+ ( end_time.tv_nsec - global_start_time.tv_nsec )
+  					/ 1E9));*/
 
 		if(NULL != head) {
-			head->time -= difftime(end_time, start_time);
-			printf("%s%.2f%s%.2f\n", "The head's time ", head->time, " Elapsed time: ", difftime(end_time, start_time));
-			if (head->time <= 0) {
-				printf("%s%d%s\n", "Packet number: ", head->p_num, " has timed out.");
-				remove_node(head->p_num, &head);
+			/*UPDATE THE HEAD NODE's TIME*/
+			double elapsed = ( end_time.tv_sec - start_time.tv_sec )
+  					+ ( end_time.tv_nsec - start_time.tv_nsec )
+  					/ 1E9;
+
+  			head->time -= elapsed;
+			//printf("%s%.2f%s%.2f\n", "The head's time ", head->time, " Elapsed time: ", elapsed);
+
+			/*HEAD NODE HAS TIMED OUT*/
+			while (NULL != head && head->time <= 0) {
+				printf("%s%d%s\n", "seq_num number: ", head->seq_num, " has timed out.");
+
+				timeout_response.sin_port = htons(head->port);
+				send_msg.flag = 2;
+				send_msg.seq_num = head->seq_num;
+
+				remove_node(head->seq_num, &head);
 				printf("%s\n", "Timed out node removed.");
 				printf("%s\n", "Status of the delta timer list:");
 				print_full_list(head);
 				printf("\n\n");
+
+
+				//send message to client tcpd
+				sendto(sock, (char*)&send_msg, sizeof send_msg, 
+					0, (struct sockaddr*)&timeout_response, sizeof timeout_response);
+
 			}
 		}
 			
@@ -295,11 +337,11 @@ int main(int argc, char *argv[]) {
 				exit(1);
 			}
 			if (recv_msg.type == 0) {
-				printf("%s%.2f%s%d\n", "Received add request ", recv_msg.time, ", ", recv_msg.p_num);
-				add_node(recv_msg.time, recv_msg.p_num);
+				printf("%s%.2f%s%d\n", "Received add request ", recv_msg.time, ", ", recv_msg.seq_num);
+				add_node(recv_msg.time, recv_msg.seq_num, recv_msg.port);
 			} else if (recv_msg.type == 1) {
-				printf("%s%d\n", "Received delete request ", recv_msg.p_num);
-				delete_node(recv_msg.p_num);
+				printf("%s%d\n", "Received delete request ", recv_msg.seq_num);
+				delete_node(recv_msg.seq_num);
 			}
 			bzero((char*)&recv_msg, sizeof(recv_msg));
 			printf("%s\n", "Just serviced message");

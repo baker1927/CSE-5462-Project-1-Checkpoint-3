@@ -4,7 +4,7 @@ all:
 	gcc -o tcpd tcpd.c circularBuffer.c auxList.c -lrt
 
 timer:
-	gcc -o timer timer.c
+	gcc -o timer timer.c -lrt
 	gcc -o driver driver.c
 
 clean_timer:
