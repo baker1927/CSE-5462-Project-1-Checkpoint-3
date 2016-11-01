@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
 		}
 		printf("Received name: %s\n\n", fileName);
 		/* Send ack to tcpd */
-		//sendto(sock, (char *)&ackFlag, sizeof ackFlag, 0, (struct sockaddr *)&serverAck, sizeof serverAck);
+		sendto(sock, (char *)&ackFlag, sizeof ackFlag, 0, (struct sockaddr *)&serverAck, sizeof serverAck);
 		
 		/* create a directory if one does not already exist */  
 		if (stat("recvd", &st) == -1) {
