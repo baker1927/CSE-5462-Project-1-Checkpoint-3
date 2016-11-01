@@ -5,7 +5,7 @@
 /* Inserts a new node to the linked list that holds information about a MSS chunck of cBuffer */
 /* Start should correspond with the start index of the array element */
 /* Searches to see if node at start address exists and if so updates it's properties. O/w a new node is created. */
-void insertNode(struct node *ptr, int start, int nextB, int pack, int bytes, int seq, struct timespec time)
+void insertNode(struct node *ptr, int start, int nextB, int pack, int bytes, int seq, int ack, struct timespec time)
 {
         struct node* exist_node = (struct node *)malloc(sizeof(struct node));
         exist_node = findNode(ptr, start);
@@ -27,6 +27,7 @@ void insertNode(struct node *ptr, int start, int nextB, int pack, int bytes, int
                 ptr->bytes = bytes;
                 ptr->seq = seq;
                 ptr->time = time;
+                ptr->ack = ack;
                 
                 /* point to end */
                 ptr->next = NULL;
@@ -35,6 +36,7 @@ void insertNode(struct node *ptr, int start, int nextB, int pack, int bytes, int
                 exist_node->bytes = bytes;
                 exist_node->seq = seq;
                 exist_node->time = time;
+                exist_node->ack = ack;
         }
         
         
