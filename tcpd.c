@@ -60,6 +60,45 @@ int main(int argc, char *argv[])
 		temp = start;
 		temp -> next = NULL;
 		
+		/* Timer Stuff */
+			int timer_sock;
+			struct sockaddr_in sin_addr;
+		
+			if((timer_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
+				perror("Error opening socket");
+				exit(1);
+			} 
+		
+			struct sockaddr_in timer_addr; 
+		
+		//    struct hostent *hp;
+		//    hp = gethostbyname(argv[1]);
+		//    if(hp == 0) {
+			// fprintf(stderr, "%s:unknown host\n", argv[1]);
+			// exit(3);
+		//    }
+		//    bcopy((char *)hp->h_addr, (char *)&server_addr.sin_addr, hp->h_length);
+			
+			timer_sock = socket(AF_INET, SOCK_DGRAM, 0); 
+		
+			timer_addr.sin_family = AF_INET; 
+			timer_addr.sin_port = htons(TIMER_PORT); // short, network byte order 
+			timer_addr.sin_addr.s_addr = inet_addr(ETA); 
+			memset(&(timer_addr.sin_zero), '\0', 8); // zero the rest of the struct 
+		
+			struct sockaddr_in driver_addr; 
+			driver_addr.sin_family = AF_INET; 
+			driver_addr.sin_port = htons(DRIVER_PORT); // short, network byte order 
+			driver_addr.sin_addr.s_addr = htonl(INADDR_ANY); 
+			memset(&(timer_addr.sin_zero), '\0', 8); // zero the rest of the struct 
+			if(bind(timer_sock, (struct sockaddr *)&driver_addr, sizeof(struct sockaddr_in)) < 0) {
+				perror("Error binding stream socket");
+				exit(1);
+			}
+		
+		
+		
+		
 		/* TROLL ADDRESSS */
 		/* this is the addr that troll is running on */
 		
@@ -248,6 +287,10 @@ int main(int argc, char *argv[])
 					firstRun = 0;
 				} else {
 					
+					if (setsockopt(ackSock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+							perror("Error");
+					}
+					
 					/* Gets ack if available */
 					if (recvfrom(ackSock, (char *)&ackMessage, sizeof ackMessage, 0,
 					(struct sockaddr *)&ackAddr, &len) > 0) {
@@ -256,7 +299,7 @@ int main(int argc, char *argv[])
 						ack = ackMessage.ackNo;
 						printf("Acknowledgement Recieved: %d\n", ack);
 						
-/* -> Stop timer for ack. ack will equal seq no. */
+
 
 						
 						
@@ -269,10 +312,15 @@ int main(int argc, char *argv[])
 							ptr->next = NULL;
 							ptr = findNodeBySeq(temp, (ack-1));
 							
+/* -> Stop timer for ack. ack will equal seq no. */
+							canceltimer((ack-1), timer_sock, timer_addr);
+							
+							
 							if (ptr != NULL) {
 								printf("\n\nSlot: %d\n\n", ptr->start);
 								
 								ptr->ack = 1;
+								
 								//printList(temp);
 								printf("\n\nValid Ack. Slot: %d Acked: %d Seq: %d\n\n", ptr->start, ptr->ack, ptr->seq);
 								printList(temp);
@@ -333,8 +381,38 @@ int main(int argc, char *argv[])
 						//do timer stuff
 						sendPacket(<timeout_seq no>, temp, troll_sock, trolladdr, destaddr);
 						//start timer for packet just sent
+					}*/
+					if (setsockopt(timer_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+							perror("Error");
 					}
-*/					
+					
+					send_msg_t buffer;
+					bzero((char*)&buffer, sizeof(buffer));
+					
+					if (recvfrom(timer_sock, (char*)&buffer, sizeof buffer, MSG_WAITALL, NULL, NULL) < 0) {
+						printf("Packet %d timed out.\n", buffer.seq_num);
+						
+						if (buffer.seq_num < sn && buffer.seq_num > sb) {
+							/* Create and send packet */
+							
+							printf("Creating packet: %d\n", buffer.seq_num);
+							amtToTroll = sendPacket(buffer.seq_num, temp, troll_sock, trolladdr, destaddr);
+							
+		/* -> Start timer for packet sb */
+							starttimer(0.02, buffer.seq_num, timer_sock, DRIVER_PORT, timer_addr);
+							
+							printf("Sent message to troll\n\n");
+							if (amtToTroll != sizeof message) {
+								perror("totroll sendto");
+								exit(1);
+							}
+						}
+						
+						
+					}
+					
+					
+				
 
 				}
 				
@@ -345,6 +423,7 @@ int main(int argc, char *argv[])
 					amtToTroll = sendPacket(sb, temp, troll_sock, trolladdr, destaddr);
 					
 /* -> Start timer for packet sb */
+					starttimer(0.02, 1, timer_sock, DRIVER_PORT, timer_addr);
 					
 					printf("Sent message to troll\n\n");
 					if (amtToTroll != sizeof message) {
@@ -628,4 +707,40 @@ int sendPacket(int seq, struct node *temp, int troll_sock, struct sockaddr_in tr
 	
 	return sendto(troll_sock, (char *)&message, sizeof message, 0, (struct sockaddr *)&trolladdr, sizeof trolladdr);
 	
+}
+
+/*This function creates a start timer message and sends it to the timer process */
+void starttimer(double timeout, int seq_num, int sock, int ret_port, struct sockaddr_in server_addr) {
+	message_t send_msg;
+	bzero((char*)&send_msg, sizeof(send_msg));
+	send_msg.type = 0;
+	send_msg.p_num = seq_num;
+	send_msg.time = timeout;
+	send_msg.ret_port = ret_port;
+
+	if(sendto(sock, &send_msg, sizeof(send_msg), 0,
+		(struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+
+		perror("There was an error sending to the socket in the driver "
+			"(starttimer)");
+		exit(1);
+	}
+}
+
+
+/* This function creates a cancel timer message and sends it to the timer process */
+void canceltimer(int seq_num, int sock, struct sockaddr_in server_addr) {
+	message_t send_msg;
+	bzero((char*)&send_msg, sizeof(send_msg));
+	send_msg.type = 1;
+	send_msg.p_num = seq_num;
+	send_msg.time = 0;
+
+	if(sendto(sock, &send_msg, sizeof(send_msg), 0, 
+		(struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+
+		perror("There was an error sending to the socket in the driver " 
+			"(canceltimer)");
+		exit(1);
+	}
 }
