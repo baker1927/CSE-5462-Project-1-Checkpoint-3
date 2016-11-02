@@ -2,28 +2,27 @@
 
 /* Prototypes in header ^^^ */
 
+/* adds data to next available buffer position. returns that position */
 int AddToBuffer(char *p, struct node *temp)
 {
-	
+	/* flag for availability of current buffer slot */
 	int ready = 0;
-	
-	
-	/* Node to get info on current buffer slot of seq */
-	//int i = 0;
+
+	/* changes buffer index to first available acked position */
 	while (ready == 0) {
+		
+		/* Node to get info on current buffer slot of seq */
 		struct node *ptr;
 		ptr = (struct node *)malloc(sizeof(struct node));
 		ptr->next = NULL;
 		ptr = findNode(temp, end);
 			
 		if (ptr != NULL) {
-			//printf("Checking Seq. Slot: %d Acked: %d Seq: %d\n", ptr->start, ptr->ack, ptr->seq);
 			if (ptr->ack == 1) {
-				
-				//buffer slot is ready
+				// current buffer slot is ready
 				ready = 1;
 			} else {
-				// increment buffer slot
+				// increment buffer slot to check in next iteration
 				end = (end + MSS) % CBUFFERSIZE;
 			}
 		}
@@ -31,25 +30,19 @@ int AddToBuffer(char *p, struct node *temp)
 			// buffer slot ready
 			ready = 1;
 		}
-		//i = i+1;
-		//printf("i: %d\n", i);
-		
-		//printList(temp);
 	}
+
+	/* buffer slot being written to */
+	int slot = end;
 	
-	
-	int temp2 = end;
-	
-	//cBuffer[end] = p;
-	
+	/* copy data to slot */
     cBuffer[end] = malloc(MSS);
-	
 	bcopy(p, cBuffer[end], MSS);
 
-	//strcpy(cBuffer[end], p);
+	/* increment slot for next call */
     end = (end + MSS) % CBUFFERSIZE;
 
-
+	/* for queue functionality */
     if (active <= CBUFFERSIZE)
     {
        active = active + MSS;
@@ -57,26 +50,23 @@ int AddToBuffer(char *p, struct node *temp)
         start = (start + MSS) % CBUFFERSIZE;
     }
 	
-	
-	return temp2;
+	return slot;
 }
 
+/* similiar to above function but omits checking auxList for availability for efficenancy purposes */
 int AddToBufferForServer(char *p)
 {
+	/* buffer slot being written to */
+	int slot = end;
 	
-	
-	int temp2 = end;
-	
-	//cBuffer[end] = p;
-	
+	/* copy data to slot */
     cBuffer[end] = malloc(MSS);
-	
 	bcopy(p, cBuffer[end], MSS);
 
-	//strcpy(cBuffer[end], p);
+	/* increment position for next call */
     end = (end + MSS) % CBUFFERSIZE;
 
-
+	/* for queue functionality */
     if (active <= CBUFFERSIZE)
     {
        active = active + MSS;
@@ -84,10 +74,10 @@ int AddToBufferForServer(char *p)
         start = (start + MSS) % CBUFFERSIZE;
     }
 	
-	
-	return temp2;
+	return slot;
 }
 
+/* Function to get from buffer if used as a queue */
 char * GetFromBuffer()
 {
     char *p;
@@ -103,34 +93,18 @@ char * GetFromBuffer()
     return p;
 }
 
+/* function to get data from buffer by specifying an index 0-63000 */
 char * GetFromBufferByIndex(int index)
 {
 	char *p;
-	printf("In Get Buffer\n");
-	fflush(stdout);
-	/*if (!active) {
-		return NULL;
-	}*/
 	
+	/* copy data to p to return */
 	p = cBuffer[index];
-	//printf("Copied data from buffer slot: %d\n", index);
-	/*
-	start = (start + MSS) % CBUFFERSIZE;
-
-	active = active - MSS;
-	*/
+	
 	return p;
 }
 
-int cBufferFull() {
-	if (start == 63000) {
-		return 1;
-	}
-	else {
-		return 0;
-	}
-}
-
+/* returns true if all slots in buffer have been acked. Checks by searching auxList */
 int cBufferReady(struct node *temp) {
 	int i = 0;
 	int acked = 0;
@@ -148,15 +122,18 @@ int cBufferReady(struct node *temp) {
 	return 1;
 }
 
+/* return start index */
 int getStart() {
 	return start;
 }
 
+/* return end index */
 int getEnd() {
 	return end;
 }
 
-void displayBuffer() { /* Function to display status of Circular Queue */
+/* Prints buffer for trouble shooting */
+void displayBuffer() {
 	int i = 0;
 	printf("\nSTATUS OF BUFFER\nFront[%d]->", start);
 	for (i = 0; i < CBUFFERSIZE; i = (i + MSS)) {
@@ -165,49 +142,3 @@ void displayBuffer() { /* Function to display status of Circular Queue */
 	printf("<-[%d]Rear", end);
 	
 }
-
-
-
-
-/* For local testing of buffer inside this file */
-
-/*int main(int argc, char *argv[]) {
-
-
-	char test1[MSS] = "TESTING1";
-	char test2[MSS] = "TESTING2";
-	char test3[MSS] = "TESTING3";
-	char block[MSS] = {0};
-	char result[MSS] = {0};
-	int k = 0;
-	for(k=0; k<64; k++) {
-		
-		AddToBuffer((char *)&test1);
-		AddToBuffer((char *)&test2);
-		AddToBuffer((char *)&test3);
-	}
-	//display();
-	/*int q = 63000;
-	AddToBuffer((char *)&test1);
-	printf("\nIndex: %d Contents: %s\n", q, cBuffer[q]);
-	AddToBuffer((char *)&test2);
-	q = 15000;
-	printf("\nIndex: %d Contents: %s\n", q, cBuffer[q]);
-	display();
-
-	//bcopy(RetrieveFromBuffer(), (char *)&result, sizeof(result));
-
-	display();
-	for(k=0; k<63; k++) {
-		bcopy(RetrieveFromBuffer(), (char *)&result, sizeof(result));
-		//printf("%s\n", result);
-	}
-	display();
-
-	return 0;
-
-
-
-
-}*/
-
