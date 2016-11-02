@@ -9,6 +9,7 @@ int AddToBuffer(char *p, struct node *temp)
 	
 	
 	/* Node to get info on current buffer slot of seq */
+	//int i = 0;
 	while (ready == 0) {
 		struct node *ptr;
 		ptr = (struct node *)malloc(sizeof(struct node));
@@ -16,7 +17,7 @@ int AddToBuffer(char *p, struct node *temp)
 		ptr = findNode(temp, end);
 			
 		if (ptr != NULL) {
-			
+			//printf("Checking Seq. Slot: %d Acked: %d Seq: %d\n", ptr->start, ptr->ack, ptr->seq);
 			if (ptr->ack == 1) {
 				
 				//buffer slot is ready
@@ -30,6 +31,10 @@ int AddToBuffer(char *p, struct node *temp)
 			// buffer slot ready
 			ready = 1;
 		}
+		//i = i+1;
+		//printf("i: %d\n", i);
+		
+		//printList(temp);
 	}
 	
 	
@@ -128,7 +133,8 @@ int cBufferFull() {
 
 int cBufferReady(struct node *temp) {
 	int i = 0;
-	
+	int acked = 0;
+	int notAcked = 0;
 	for (i = 0; i < CBUFFERSIZE; i = (i + MSS)) {
 		struct node *ptr;
 		ptr = (struct node *)malloc(sizeof(struct node));
