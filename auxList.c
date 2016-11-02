@@ -110,7 +110,7 @@ void printList(struct node *ptr)
         {
                 return;
         }
-        printf("%d ",ptr->start);
+        printf("Seq: %d Slot: %d Acked: %d\n",ptr->seq, ptr->start, ptr->ack);
         printList(ptr->next);
 }
 
