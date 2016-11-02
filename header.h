@@ -32,6 +32,8 @@
 #define CBUFFERSIZE 64000 /* 64 KB buffer per spec */
 #define ALPHA 0.875
 #define RHO 0.25
+#define TIMER_PORT 9090
+#define DRIVER_PORT 8908
 
 /* Structs used */
 
@@ -45,6 +47,11 @@
 	//add additional vars here
 } Packet;*/
 
+typedef struct send {
+	int flag;
+	int seq_num;
+} send_msg_t;
+	
 //TCP Header structure as per RFC 793
 typedef struct Packet {
  u_short th_sport;  /* source port */
@@ -104,6 +111,14 @@ struct node
 	struct node *next;
 };
 
+/*This is the definition of a message that is passed from the driver to the timer */
+typedef struct message {
+	int type;
+	int p_num;
+	double time;
+	int ret_port;
+} message_t;
+
 /* aux list prototypes */
 void insertNode(struct node *ptr, int start, int nextB, int pack, int bytes, int seq, int ack, struct timespec time);
 void deleteNode(struct node *ptr, int start);
@@ -127,6 +142,10 @@ int getEnd();
 void displayBuffer();
 int cBufferReady(struct node *temp);
 int AddToBufferForServer(char *p);
+
+/* These are the prototypes for the functions described in this file */
+void starttimer(double timeout, int seq_num, int sock, int ret_port, struct sockaddr_in server_addr);
+void canceltimer(int seq_num, int sock, struct sockaddr_in server_addr);
 
 #endif
 
