@@ -38,8 +38,6 @@ void insertNode(struct node *ptr, int start, int nextB, int pack, int bytes, int
                 exist_node->time = time;
                 exist_node->ack = ack;
         }
-        
-        
 }
 
 /* Deletes node with a specific start index */
@@ -65,16 +63,14 @@ void deleteNode(struct node *ptr, int start)
         return;
 }
 
-/* Finds and returns node with specific start value */
+/* Finds and returns node with specific start value related to its position in the circular buffer */
 /* Does not remove node */
 struct node *findNode(struct node *ptr, int start)
 {
-        
         ptr = ptr -> next;
 
         while(ptr!=NULL)
         {
-                
                 if(ptr->start == start)
                 {
                         return ptr;
@@ -84,11 +80,10 @@ struct node *findNode(struct node *ptr, int start)
         return NULL;
 }
 
-/* Finds and returns node with specific start value */
+/* Finds and returns node with specific packet seqeunce value */
 /* Does not remove node */
 struct node *findNodeBySeq(struct node *ptr, int seq)
 {
-
 	ptr = ptr->next;
 
 	while (ptr != NULL)
@@ -113,61 +108,3 @@ void printList(struct node *ptr)
         printf("Seq: %d Slot: %d Acked: %d\n",ptr->seq, ptr->start, ptr->ack);
         printList(ptr->next);
 }
-
-/*int main()
-{
-        /* start always points to the first node of the linked list.
-           temp is used to point to the last node of the linked list.*/
-        /*struct node *start,*temp;
-        start = (struct node *)malloc(sizeof(struct node)); 
-        temp = start;
-        temp -> next = NULL;
-        /* Here in this code, we take the first node as a dummy node.
-           The first node does not contain data, but it used because to avoid handling special cases
-           in insert and delete functions.
-         */
-        /*printf("1. Insert\n");
-        printf("2. Delete\n");
-        printf("3. Print\n");
-        printf("4. Find\n");
-        while(1)
-        {
-                int query;
-                scanf("%d",&query);
-                if(query==1)
-                {
-                        int data;
-                        scanf("%d",&data);
-                        insertNode(start, 1, 2, 3, 4, 5, 6);
-                }
-                else if(query==2)
-                {
-                        int data;
-                        scanf("%d",&data);
-                        deleteNode(start, 3);
-                }
-                else if(query==3)
-                {
-                        printf("The list is ");
-                        printList(start->next);
-                        printf("\n");
-                }
-                else if(query==4)
-                {
-                        int data;
-                        scanf("%d",&data);
-                        struct node *status = findNode(start,4);
-                        if(status)
-                        {
-                                printf("Element Found\n");
-                        }
-                        else
-                        {
-                                printf("Element Not Found\n");
-
-                        }
-                }
-        }
-
-
-}*/
