@@ -8,7 +8,6 @@
 #include <sys/types.h>
 #include <sys/signal.h>
 #include <sys/socket.h>
-//#include <sys/time.h>
 #include <time.h>
 #include <sys/param.h>
 #include <sys/select.h>
@@ -35,24 +34,15 @@
 #define TIMER_PORT 9090
 #define DRIVER_PORT 8908
 
-/* Structs used */
-
-/* tcpd to tcpd packet */
-/*typedef struct Packet {
-	char body[MSS];
-	int bytes_to_read;
-	int chksum;
-	int packNo;
-	int startNo;
-	//add additional vars here
-} Packet;*/
+/* Structs */
 
 typedef struct send {
 	int flag;
 	int seq_num;
+	double time;
 } send_msg_t;
 	
-//TCP Header structure as per RFC 793
+/* TCP Header structure as per RFC 793 */
 typedef struct Packet {
  u_short th_sport;  /* source port */
  u_short th_dport;  /* destination port */
@@ -80,13 +70,13 @@ typedef struct Packet {
  u_short th_win;   /* window */
  u_short th_sum;   /* checksum */
  u_short th_urp;   /* urgent pointer */
- //data
+ /* data */
  char body[MSS];
  int bytes_to_read;
  int chksum;
  int packNo;
  int startNo;
- int ackType; //0 for NAK, 1 for ACK
+ int ackType;
 } Packet;
 
 /* tcpd to troll packet */
@@ -94,7 +84,6 @@ typedef struct MyMessage {
 	struct sockaddr_in msg_header;
 	struct Packet msg_pack;
 	int ackNo;
-	//int flag;	
 } MyMessage;
 
 /* aux List node */
@@ -107,11 +96,10 @@ struct node
 	int seq;   /* Sequence number */
 	int ack;   /* acknowledgement flag (0 = no, 1 = yes) */
 	struct timespec time;/* Time */
-	
 	struct node *next;
 };
 
-/*This is the definition of a message that is passed from the driver to the timer */
+/* timer message */
 typedef struct message {
 	int type;
 	int p_num;
@@ -129,7 +117,7 @@ double calculate_rto(double sample_rtt);
 char * GetFromBufferByIndex(int index);
 int sendPacket(int seq, struct node *temp, int troll_sock, struct sockaddr_in trolladdr, struct sockaddr_in destaddr);
 
-/* circular buffer properties */
+/* circular buffer properties/prototypes */
 static char *cBuffer[CBUFFERSIZE];
 static int start = 0;
 static int end = 0;
@@ -143,7 +131,7 @@ void displayBuffer();
 int cBufferReady(struct node *temp);
 int AddToBufferForServer(char *p);
 
-/* These are the prototypes for the functions described in this file */
+/* timer prototypes */
 void starttimer(double timeout, int seq_num, int sock, int ret_port, struct sockaddr_in server_addr);
 void canceltimer(int seq_num, int sock, struct sockaddr_in server_addr);
 
