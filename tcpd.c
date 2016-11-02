@@ -172,7 +172,7 @@ int main(int argc, char *argv[])
 		tv.tv_usec = 100000;
 		
 		int recCount = 0;
-		
+		int i = 0;
 		
 		/* Begin send loop */
 		for(;;) {
@@ -187,8 +187,8 @@ int main(int argc, char *argv[])
 				
 				/* Experimental. Need to allow buffer to clean up before overwriting it */
 				
-				if (recCount <= 64) {
-					
+				//if (recCount <= 64) {
+				if (i < 64) {	
 					/* Receive data from ftpc and copy to local buffer */
 					amtFromClient = recvfrom(local_sock, buffer, sizeof(buffer), MSG_WAITALL, NULL, NULL);
 					if (amtFromClient > 0) {
@@ -213,12 +213,21 @@ int main(int argc, char *argv[])
 						
 						/* increment packet seq number */
 						sn = sn + 1;
+						i = i+ 1;
 						
-					} else {
+					} 
+				}
+					if (i == 64) {
 						if (cBufferReady(temp) == 1) {
-							recCount = 0;
+							i = 0;
 						}
 					}
+					
+					/*else {
+						if (cBufferReady(temp) == 1) {
+							recCount = 0;
+						}*/
+					//}
 					
 					/* Sets timeout for all calls after first iteration. This allows tcpd to wait for first packet from ftpc */
 					if (firstRun == 0) {
@@ -228,7 +237,7 @@ int main(int argc, char *argv[])
 					}
 					
 					
-				}
+				//}
 				
 				/* GET ACK/REQUEST */
 			
@@ -249,22 +258,26 @@ int main(int argc, char *argv[])
 						
 /* -> Stop timer for ack. ack will equal seq no. */
 
-						/* Find packet with matching ack and set ack flag to 1 */
-						struct node *ptr;
-						ptr = (struct node *)malloc(sizeof(struct node));
-						ptr->next = NULL;
-						ptr = findNodeBySeq(temp, (ack-1));
 						
-						if (ptr != NULL) {
-							printf("\n\nSlot: %d\n\n", ptr->start);
-							
-							ptr->ack = 1;
-							
-							printf("\n\nSlot: %d\n\n", ptr->ack);
-						}
 						
 						/* Success. Adjust window. */
-						if (ack > sb) {
+						if (ack == (sb+1)) {
+							
+							/* Find packet with matching ack and set ack flag to 1 */
+							struct node *ptr;
+							ptr = (struct node *)malloc(sizeof(struct node));
+							ptr->next = NULL;
+							ptr = findNodeBySeq(temp, (ack-1));
+							
+							if (ptr != NULL) {
+								printf("\n\nSlot: %d\n\n", ptr->start);
+								
+								ptr->ack = 1;
+								//printList(temp);
+								printf("\n\nValid Ack. Slot: %d Acked: %d Seq: %d\n\n", ptr->start, ptr->ack, ptr->seq);
+								printList(temp);
+							}
+							
 							
 							sm = sm + (ack-sb);
 							sb = ack;
@@ -308,6 +321,8 @@ int main(int argc, char *argv[])
 							printf("ACKED NODE IS NULL\n");
 							}*/
 							
+						} else {
+							sb = sb;
 						}
 						
 						
@@ -323,18 +338,19 @@ int main(int argc, char *argv[])
 
 				}
 				
-		
-				/* Create and send packet */
-				
-				printf("Creating packet: %d\n", sb);
-				amtToTroll = sendPacket(sb, temp, troll_sock, trolladdr, destaddr);
-				
+				if (sb < sn) {
+					/* Create and send packet */
+					
+					printf("Creating packet: %d\n", sb);
+					amtToTroll = sendPacket(sb, temp, troll_sock, trolladdr, destaddr);
+					
 /* -> Start timer for packet sb */
-				
-				printf("Sent message to troll\n\n");
-				if (amtToTroll != sizeof message) {
-					perror("totroll sendto");
-					exit(1);
+					
+					printf("Sent message to troll\n\n");
+					if (amtToTroll != sizeof message) {
+						perror("totroll sendto");
+						exit(1);
+					}
 				}
 	
 			}
@@ -450,7 +466,7 @@ int main(int argc, char *argv[])
 		int next = 0;
 		int ack = 0;
 		int rn = 0;
-		
+
 		/* Begin recieve loop */
 		for(;;) {
 			
@@ -460,32 +476,35 @@ int main(int argc, char *argv[])
 				/* length of addr for recieve call */
 				len = sizeof trolladdr;
 				
-				/* read in one packet from the troll */
-				amtFromTcpd = recvfrom(troll_sock, (char *)&message, sizeof message, MSG_WAITALL,
-				(struct sockaddr *)&trolladdr, &len);
-				if (amtFromTcpd < 0) {
-					perror("fromtroll recvfrom");
-					exit(1);
-				}
 				
-				printf("Recieved data from troll.\n");
 				
-				/* Copy packet locally */
-				bcopy(&message.msg_pack, &packet, sizeof(packet));
-				
-				/* get checksum from packet */
-				recv_chksum = packet.chksum;
-				
-				/* zero checksum to make equal again */
-				packet.chksum = 0;
-				
-				/* Calculate checksum of packet recieved */
-				chksum = crcFast((char *)&packet, sizeof(packet));
-				printf("Checksum of data: %X\n", chksum);
-				
-				/*Get packet sequence*/
-				int seq = packet.seq;
-				
+					/* read in one packet from the troll */
+					amtFromTcpd = recvfrom(troll_sock, (char *)&message, sizeof message, MSG_WAITALL,
+					(struct sockaddr *)&trolladdr, &len);
+					if (amtFromTcpd < 0) {
+						perror("fromtroll recvfrom");
+						exit(1);
+					}
+					
+					printf("Recieved data from troll.\n");
+					
+					/* Copy packet locally */
+					bcopy(&message.msg_pack, &packet, sizeof(packet));
+					
+					/* get checksum from packet */
+					recv_chksum = packet.chksum;
+					
+					/* zero checksum to make equal again */
+					packet.chksum = 0;
+					
+					/* Calculate checksum of packet recieved */
+					chksum = crcFast((char *)&packet, sizeof(packet));
+					printf("Checksum of data: %X\n", chksum);
+					
+					/*Get packet sequence*/
+					int seq = packet.seq;
+					
+			
 				
 				/* Compare expected checksum to one caluclated above. Send NAK. */
 				if ((chksum != recv_chksum)) {
@@ -574,17 +593,21 @@ int sendPacket(int seq, struct node *temp, int troll_sock, struct sockaddr_in tr
 	ptr = (struct node *)malloc(sizeof(struct node));
 	ptr->next = NULL;
 	ptr = findNodeBySeq(temp, seq);
+	printf("Past find\n");
+	fflush(stdout);
 	
 	int bytesToSend = ptr->bytes;
+	printf("Past get bytes\n");
+	fflush(stdout);
 	
 	/* Copy payload from circular buffer to tcpd packet */
 	bcopy(GetFromBufferByIndex(ptr->start), packet.body, bytesToSend); // removing from c buffer
 	printf("Copied data from buffer slot: %d\n", ptr->start);
-	
+	fflush(stdout);
 	/* Prepare packet */
 	packet.bytes_to_read = bytesToSend;
 	packet.chksum = 0;
-	packet.seq = seq;
+	packet.seq = seq; 
 	
 	/* Calculate checksum */
 	int chksum = crcFast((char *)&packet, sizeof(packet));
