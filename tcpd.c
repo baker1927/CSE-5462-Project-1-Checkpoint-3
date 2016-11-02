@@ -35,69 +35,74 @@ int main(int argc, char *argv[])
 			exit(1);
 		}
 		
+		/* greeting banner */
 		printf("%s\n\n", "Running on client machine...");
 		
-		int troll_sock, local_sock, tcpd_sock,ackSock;	/* Sockets */
+		/* Addresses */
+		struct sockaddr_in trolladdr, destaddr, localaddr, clientaddr, tcpdaddr, clientack, masterAck, ackAddr, sin_addr, timer_addr, driver_addr; 
+		
+		/* Sockets */
+		int troll_sock, local_sock, tcpd_sock, ackSock, timer_sock;
+		
+		/* Variables */
 		MyMessage message, ackMessage; 			        /* Packets sent to troll process */
 		Packet packet, ackPacket;				        /* Packets sent to server tcpd */
 		struct hostent *host; 					        /* Hostname identifier */
-		struct sockaddr_in trolladdr, destaddr, localaddr, clientaddr, tcpdaddr, clientack, masterAck, ackAddr;  /* Addresses */
 		fd_set selectmask; 						        /* Socket descriptor for select */
 		int amtFromClient, amtToTroll, total = 0;       /* Bookkeeping vars for sending */
 		int chksum = 0;							        /* Checksum */
 		char buffer[MSS] = {0};                         /* Local temp buffer */
 		int ftpcAck = 1;                                /* tcpd to ftpc ack flag */
 		int firstSend = 1;                              /* first send to server tcpd flag */
+		int firstRun = 1;								/* first iteration of send loop flag */
+		int bufferReady = 0;							/* Buffer management flag */
 		double est_rtt = 2.0;                           /* RTT and TRO calcs */
 		double est_var = 0.0;							/* RTT and TRO calcs */
 		double rto = 3.0;								/* RTT and TRO calcs */
 		int current = 0;                                /* Circular buffer indexing vars */
 		int next = 0;									/* Circular buffer indexing vars */
-		int ack, ackType = 0; 									/* Circular buffer indexing vars */
+		int ack = 0;                                    /* ack var */
+		int len = sizeof ackAddr;						/* For rec ack */
+		
+		/* Sliding window variables */
+		int sn = 0;										/* Packet sequence number */
+		int window = 20;								/* Window size */
+		int sb = 0;										/* Window base */
+		int sm = window-1;								/* Window max */
+	
+		/* For rtt and rto calculation */
+		struct timeval tv;
+		tv.tv_sec = 0;
+		tv.tv_usec = 100000;
+		double elapsed = 0.0;
+		
 		/* Init linked list aux structure */
 		struct node *start,*temp;
 		start = (struct node *)malloc(sizeof(struct node));
 		temp = start;
 		temp -> next = NULL;
 		
-		/* Timer Stuff */
-			int timer_sock;
-			struct sockaddr_in sin_addr;
-		
-			if((timer_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
-				perror("Error opening socket");
-				exit(1);
-			} 
-		
-			struct sockaddr_in timer_addr; 
-		
-		//    struct hostent *hp;
-		//    hp = gethostbyname(argv[1]);
-		//    if(hp == 0) {
-			// fprintf(stderr, "%s:unknown host\n", argv[1]);
-			// exit(3);
-		//    }
-		//    bcopy((char *)hp->h_addr, (char *)&server_addr.sin_addr, hp->h_length);
+		/* TIMER INIT */
+		/* sets up communication to timer process */
 			
-			timer_sock = socket(AF_INET, SOCK_DGRAM, 0); 
-		
-			timer_addr.sin_family = AF_INET; 
-			timer_addr.sin_port = htons(TIMER_PORT); // short, network byte order 
-			timer_addr.sin_addr.s_addr = inet_addr(ETA); 
-			memset(&(timer_addr.sin_zero), '\0', 8); // zero the rest of the struct 
-		
-			struct sockaddr_in driver_addr; 
-			driver_addr.sin_family = AF_INET; 
-			driver_addr.sin_port = htons(DRIVER_PORT); // short, network byte order 
-			driver_addr.sin_addr.s_addr = htonl(INADDR_ANY); 
-			memset(&(timer_addr.sin_zero), '\0', 8); // zero the rest of the struct 
-			if(bind(timer_sock, (struct sockaddr *)&driver_addr, sizeof(struct sockaddr_in)) < 0) {
-				perror("Error binding stream socket");
-				exit(1);
-			}
-		
-		
-		
+		if((timer_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
+			perror("Error opening socket");
+			exit(1);
+		} 
+		 
+		timer_addr.sin_family = AF_INET; 
+		timer_addr.sin_port = htons(TIMER_PORT); // short, network byte order 
+		timer_addr.sin_addr.s_addr = inet_addr(ETA); 
+		memset(&(timer_addr.sin_zero), '\0', 8); // zero the rest of the struct 
+	
+		driver_addr.sin_family = AF_INET; 
+		driver_addr.sin_port = htons(DRIVER_PORT); // short, network byte order 
+		driver_addr.sin_addr.s_addr = htonl(INADDR_ANY); 
+		memset(&(timer_addr.sin_zero), '\0', 8); // zero the rest of the struct 
+		if(bind(timer_sock, (struct sockaddr *)&driver_addr, sizeof(struct sockaddr_in)) < 0) {
+			perror("Error binding stream socket");
+			exit(1);
+		}
 		
 		/* TROLL ADDRESSS */
 		/* this is the addr that troll is running on */
@@ -189,49 +194,24 @@ int main(int argc, char *argv[])
 		FD_ZERO(&selectmask);
 		FD_SET(local_sock, &selectmask);
 		
-		/* Temp vars... will clean up later */
-		
-		int seq = 0;
-		int sw = 20;
-		int sf = 0;
-		int sn = 0;
-		
-		int sn_min = 0;
-		int sn_max = 0;
-		int rn = 0;
-		int window = 20;
-		
-		int firstRun = 1;
-		int sb = 0;
-		int sm = window-1;
-		int canSend = 1;
-		
-		struct timeval tv;
-		tv.tv_sec = 0;
-		tv.tv_usec = 100000;
-		
-		int recCount = 0;
-		int i = 0;
-		
 		/* Begin send loop */
 		for(;;) {
-			
 			
 			/* Wait for data on socket from cleint */
 			if (FD_ISSET(local_sock, &selectmask)) {
 				
-				
-				
 				/* GET DATA FRROM CLIENT PROCESS */
 				
-				/* Experimental. Need to allow buffer to clean up before overwriting it */
-				
-				//if (recCount <= 64) {
-				if (i < 64) {	
+				/* If less than 64 slots have been filled allow client data to be copied to buffer */
+				/* If > 64 times, this will be skipped until buffer can accept more data */
+				if (bufferReady < 64) {
+						
 					/* Receive data from ftpc and copy to local buffer */
 					amtFromClient = recvfrom(local_sock, buffer, sizeof(buffer), MSG_WAITALL, NULL, NULL);
+					
 					if (amtFromClient > 0) {
-						printf("Received data from client.\n");
+						
+						printf("Received new data from client.\n");
 						
 						/* Copy from local buffer to circular buffer */
 						current = AddToBuffer(buffer, temp);// Add to c buffer
@@ -241,52 +221,42 @@ int main(int argc, char *argv[])
 						struct timespec temp_t;
 						insertNode(temp, current, next, 0, amtFromClient, sn, 0, temp_t);
 						
-						recCount = recCount + 1;
-						
 						/* Send ack to ftpc after data written to buffer */
 						sendto(local_sock, (char*)&ftpcAck, sizeof ftpcAck, 0, (struct sockaddr *)&clientack, sizeof clientack);
-						printf("Sent ack to ftpc\n");
 						
 						/* For bookkeeping/debugging */
 						total += amtToTroll;
 						
 						/* increment packet seq number */
 						sn = sn + 1;
-						i = i+ 1;
 						
+						/* increment count of times data copied to buffer */
+						bufferReady = bufferReady+ 1;
 					} 
 				}
-					if (i == 64) {
-						if (cBufferReady(temp) == 1) {
-							i = 0;
-						}
-					}
-					
-					/*else {
-						if (cBufferReady(temp) == 1) {
-							recCount = 0;
-						}*/
-					//}
-					
-					/* Sets timeout for all calls after first iteration. This allows tcpd to wait for first packet from ftpc */
-					if (firstRun == 0) {
-						if (setsockopt(local_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-							perror("Error");
-						}
-					}
-					
-					
-				//}
 				
+				/* If buffer has been written to 64 times continuously check if there is space to copy. If so reset ready flag */
+				if (bufferReady == 64) {
+					if (cBufferReady(temp) == 1) {
+						bufferReady = 0;
+					}
+				}
+					
+				/* Sets timeout for all calls after first iteration. This allows tcpd to wait for first packet from ftpc */
+				if (firstRun == 0) {
+					if (setsockopt(local_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+						perror("Error");
+					}
+				}
+					
 				/* GET ACK/REQUEST */
-			
-				int len = sizeof ackAddr;
 				
 				/* Skips to send first packet if in first iteration */
 				if (firstRun == 1) {
 					firstRun = 0;
 				} else {
 					
+					/* set timeout on ack socket. This is to prevent lock up if no acks are available */
 					if (setsockopt(ackSock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
 							perror("Error");
 					}
@@ -297,14 +267,12 @@ int main(int argc, char *argv[])
 						
 						/* Get ack/request no. */
 						ack = ackMessage.ackNo;
-						printf("Acknowledgement Recieved: %d\n", ack);
-						
-
-
 						
 						
-						/* Success. Adjust window. */
+						/* Successful ack. */
 						if (ack == (sb+1)) {
+							
+							printf("Successful acknowledgement recieved: %d\n", ack);
 							
 							/* Find packet with matching ack and set ack flag to 1 */
 							struct node *ptr;
@@ -312,139 +280,126 @@ int main(int argc, char *argv[])
 							ptr->next = NULL;
 							ptr = findNodeBySeq(temp, (ack-1));
 							
-/* -> Stop timer for ack. ack will equal seq no. */
+							/* Stop timer for acked packet. */
 							canceltimer((ack-1), timer_sock, timer_addr);
 							
-							
+							/* Mark packet as acked in auxlist */
 							if (ptr != NULL) {
-								printf("\n\nSlot: %d\n\n", ptr->start);
-								
 								ptr->ack = 1;
-								
-								//printList(temp);
-								printf("\n\nValid Ack. Slot: %d Acked: %d Seq: %d\n\n", ptr->start, ptr->ack, ptr->seq);
-								printList(temp);
 							}
 							
-							
+							/* Adjust window */
 							sm = sm + (ack-sb);
 							sb = ack;
 							
-							/* Commented out below for clarity when debugging */
+							/* Calculate rtt/rto/var */
 							
-							/*struct timespec endTime;
+							/* Get time */
+							struct timespec endTime;
 							clock_gettime(CLOCK_MONOTONIC, &endTime);
 							
-							//find the node that represents the packet that was just acked
-							struct node * acked_node = findNodeBySeq(temp, ack-1);
+							/* find the node that represents the packet that was just acked */
+							struct node * acked_node = findNodeBySeq(temp, (ack-1));
 							
 							if (NULL != acked_node) {
 							
-							double elapsed = (endTime.tv_sec - acked_node->time.tv_sec)
-							+ (endTime.tv_nsec - acked_node->time.tv_nsec)
-							/ 1E9;
+								/* find elapsed time */
+								double elapsed = (endTime.tv_sec - acked_node->time.tv_sec)
+								+ (endTime.tv_nsec - acked_node->time.tv_nsec)
+								/ 1E9;
+								
+								/* rtt/rto for first send */
+								if (firstSend == 1) {
+									est_rtt = elapsed;
+									est_var = elapsed / 2.0;
+									rto = est_rtt + 4.0 * est_var;
+									firstSend = 0;
+								}
+								/* rtt/rto for remaining sends */
+								else {
+									est_rtt = (0.875 * elapsed) + (1 - 0.875) * est_rtt;
+									est_var = (1 - 0.25) * est_var + 0.25 * abs((est_rtt - elapsed));
+									rto = est_rtt + 4.0 * est_var;
+								}
+								
+								/* print info */
+								//printf("Time Elapsed: %f\n", elapsed);
+								//printf("RTO: %.9f\n", rto);
+								printf("RTT: %.9f\n", est_rtt);
+								//printf("VAR: %.9f\n\n", est_var);
+								
+								}
+								/* Catch null node */
+								else {
+									//printf("Acked node does not exist.\n");
+								}
 							
-							if (firstSend == 1) {
-							est_rtt = elapsed;
-							est_var = elapsed / 2.0;
-							rto = est_rtt + 4.0 * est_var;
-							firstSend = 0;
-							}
-							else {
-							//calculate_rto(elapsed);
-							est_rtt = (0.875 * elapsed) + (1 - 0.875) * est_rtt;
-							est_var = (1 - 0.25) * est_var + 0.25 * abs((est_rtt - elapsed));
-							rto = est_rtt + 4.0 * est_var;
-							
-							}
-							
-							printf("Time Elapsed: %f\n", elapsed);
-							//printf("Ack: %d Node: %d\n", ack, acked_node->start);
-							printf("RTO: %.9f\n", rto);
-							printf("RTT: %.9f\n", est_rtt);
-							printf("VAR: %.9f\n\n", est_var);
-							
-							}
-							else {
-							printf("ACKED NODE IS NULL\n");
-							}*/
-							
+						/* NAK recieved. Keep send index at current spot. Redundant assignment for clarity */
 						} else {
+							printf("Unuccessful acknowledgement recieved: %d\n", ack);
 							sb = sb;
-						}
-						
-						
+						}	
 					}
 					
-/* -> Check for time out here					
-					if (recvfrom(timeout_socket)) {
-						//do timer stuff
-						sendPacket(<timeout_seq no>, temp, troll_sock, trolladdr, destaddr);
-						//start timer for packet just sent
-					}*/
+					/* Check for timed out nodes */
+					
+					/* Set timeout for timeout socket to prevent lockup if timeout is not received */
 					if (setsockopt(timer_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
 							perror("Error");
 					}
 					
+					/* timeout message init */
 					send_msg_t buffer;
 					bzero((char*)&buffer, sizeof(buffer));
 					
+					/* Listen for timeout message from timer */
 					if (recvfrom(timer_sock, (char*)&buffer, sizeof buffer, MSG_WAITALL, NULL, NULL) < 0) {
-						printf("Packet %d timed out.\n", buffer.seq_num);
 						
+						/* if timeout seq no valid resend packet */
 						if (buffer.seq_num < sn && buffer.seq_num > sb) {
-							/* Create and send packet */
 							
-							printf("Creating packet: %d\n", buffer.seq_num);
+							/* Create and send packet */
+							printf("Packet %d timed out.\n", buffer.seq_num);
+							printf("Resending packet: %d\n", buffer.seq_num);
 							amtToTroll = sendPacket(buffer.seq_num, temp, troll_sock, trolladdr, destaddr);
 							
-		/* -> Start timer for packet sb */
-							starttimer(0.02, buffer.seq_num, timer_sock, DRIVER_PORT, timer_addr);
+							/* Start timer with rto timeout for packet */
+							starttimer(rto, buffer.seq_num, timer_sock, DRIVER_PORT, timer_addr);
 							
-							printf("Sent message to troll\n\n");
 							if (amtToTroll != sizeof message) {
 								perror("totroll sendto");
 								exit(1);
 							}
 						}
-						
-						
 					}
-					
-					
-				
-
 				}
 				
+				/* if window base valid send packet */
+				/* if > sn data for sn has not been read into buffer yet */
+			
 				if (sb < sn) {
-					/* Create and send packet */
 					
-					printf("Creating packet: %d\n", sb);
+					/* Create and send packet */
+					printf("Sending packet: %d\n", sb);
 					amtToTroll = sendPacket(sb, temp, troll_sock, trolladdr, destaddr);
 					
-/* -> Start timer for packet sb */
-					starttimer(0.02, 1, timer_sock, DRIVER_PORT, timer_addr);
+					/* Start timer with rto timeout*/
+					starttimer(rto, 1, timer_sock, DRIVER_PORT, timer_addr);
 					
-					printf("Sent message to troll\n\n");
 					if (amtToTroll != sizeof message) {
 						perror("totroll sendto");
 						exit(1);
 					}
 				}
-	
 			}
-	
-			/* maybe unnesscary but working so why not? */
-			FD_ZERO(&selectmask);
-			FD_SET(local_sock, &selectmask);
-		
 		}
 		
 		/* Reset socket descriptor for select */
 		FD_ZERO(&selectmask);
 		FD_SET(local_sock, &selectmask);
 
-		/* Run on server side */
+	/* Run on server side */
+	
 	} else if (atoi(argv[1]) == 0) {
 		
 		/* Validate args */
@@ -453,18 +408,29 @@ int main(int argc, char *argv[])
 			exit(1);
 		}
 		
+		/* greeting banner */
 		printf("%s\n\n", "Running on server machine...");
 		
-		int troll_sock;						/* a socket for sending messages and receiving responses */
-		int local_sock, ackSock; 					/* a socket to communicate with the client process */
-		MyMessage message, ackMessage; 					/* recieved packet from remote troll process */
-		Packet packet, ackPacket;
-		struct sockaddr_in trolladdr, localaddr, serveraddr, serverack, masterAck;    /* Addresses */
-		struct hostent *host; 					/* Hostname identifier */
-		fd_set selectmask;					/* Socket descriptor for select */
-		int amtFromTcpd, amtToServer, len, total, amtToTcpd = 0; 		/* Bookkeeping vars */
-		int chksum, recv_chksum = 0;						/* Checksum */
-		int ftpsAck = 1;					/* ftps ack */
+		/* Addresses */
+		struct sockaddr_in trolladdr, localaddr, serveraddr, serverack, masterAck;
+		int local_sock, ackSock, troll_sock; 						/* sockets */
+		MyMessage message, ackMessage; 								/* recieved packet from remote troll process */
+		Packet packet, ackPacket;									/* packet struct */
+		struct hostent *host; 										/* Hostname identifier */
+		fd_set selectmask;											/* Socket descriptor for select */
+		int amtFromTcpd, amtToServer, len, total, amtToTcpd = 0; 	/* Bookkeeping vars */
+		int chksum, recv_chksum = 0;								/* Checksum */
+		int ftpsAck = 1;
+													/* ftps ack */
+		/* aux List */
+		struct node *start,*temp;									
+		start = (struct node *)malloc(sizeof(struct node));
+		temp = start;
+		temp -> next = NULL;
+		int current = 0;
+		int next = 0;
+		int ack = 0;
+		int rn = 0;
 		
 		/* SOCKET FROM TROLL */
 		/* This is the socket to recieve from the troll running on the client machine */
@@ -536,16 +502,6 @@ int main(int argc, char *argv[])
 		FD_ZERO(&selectmask);
 		FD_SET(troll_sock, &selectmask);
 		
-		/* Temp vars...will clean up later */
-		struct node *start,*temp;
-		start = (struct node *)malloc(sizeof(struct node));
-		temp = start;
-		temp -> next = NULL;
-		int current = 0;
-		int next = 0;
-		int ack = 0;
-		int rn = 0;
-
 		/* Begin recieve loop */
 		for(;;) {
 			
@@ -554,8 +510,6 @@ int main(int argc, char *argv[])
 				
 				/* length of addr for recieve call */
 				len = sizeof trolladdr;
-				
-				
 				
 					/* read in one packet from the troll */
 					amtFromTcpd = recvfrom(troll_sock, (char *)&message, sizeof message, MSG_WAITALL,
@@ -582,18 +536,16 @@ int main(int argc, char *argv[])
 					
 					/*Get packet sequence*/
 					int seq = packet.seq;
-					
-			
 				
 				/* Compare expected checksum to one caluclated above. Send NAK. */
 				if ((chksum != recv_chksum)) {
-					printf("CHECKSUM ERROR: Expected: %X Actual: %X\nSending NAK\n", recv_chksum, chksum);
+					printf("Checksum error: Expected: %X Actual: %X\n", recv_chksum, chksum);
 					
 					/* Prepare troll wrapper */
 					ackMessage.msg_header = masterAck;
 					ackMessage.ackNo = rn;
-					//ackPacket.ack = rn;
-					//ackPacket.ackType = 1;
+					
+					/* Send NAK */
 					sendto(troll_sock, (char *)&ackMessage, sizeof(ackMessage), 0, (struct sockaddr *)&servertrolladdr, sizeof servertrolladdr);
 					printf("Sent ack: %d\n\n", rn);
 					
@@ -618,9 +570,8 @@ int main(int argc, char *argv[])
 					amtToServer = sendto(local_sock, (char *)GetFromBuffer(), bytesToSend, 0, (struct sockaddr *)&destaddr, sizeof destaddr);
 					if (amtToServer < 0) {
 						perror("totroll sendto");
-						/* To keep daemon running for grable demo */
-						//exit(1);
 					}
+					
 					printf("Copied data from buffer slot: %d\n", current);
 					
 					printf("Sent data to server.\n");
@@ -638,6 +589,7 @@ int main(int argc, char *argv[])
 					ackMessage.msg_header = masterAck;
 					ackMessage.ackNo = rn;
 
+					/* Send Ack */
 					sendto(troll_sock, (char *)&ackMessage, sizeof(ackMessage), 0, (struct sockaddr *)&servertrolladdr, sizeof servertrolladdr);
 					printf("Sent ack: %d\n\n", rn);
 
@@ -663,6 +615,7 @@ int main(int argc, char *argv[])
 	}
 }
 
+/* This function sends a packet to the troll process to be forwarded to server side tcpd */
 int sendPacket(int seq, struct node *temp, int troll_sock, struct sockaddr_in trolladdr, struct sockaddr_in destaddr) {
 	MyMessage message;		        /* Packets sent to troll process */
 	Packet packet;			        /* Packets sent to server tcpd */
@@ -672,17 +625,13 @@ int sendPacket(int seq, struct node *temp, int troll_sock, struct sockaddr_in tr
 	ptr = (struct node *)malloc(sizeof(struct node));
 	ptr->next = NULL;
 	ptr = findNodeBySeq(temp, seq);
-	printf("Past find\n");
-	fflush(stdout);
 	
+	/* get actualy bytes in packet */
 	int bytesToSend = ptr->bytes;
-	printf("Past get bytes\n");
-	fflush(stdout);
 	
 	/* Copy payload from circular buffer to tcpd packet */
 	bcopy(GetFromBufferByIndex(ptr->start), packet.body, bytesToSend); // removing from c buffer
-	printf("Copied data from buffer slot: %d\n", ptr->start);
-	fflush(stdout);
+
 	/* Prepare packet */
 	packet.bytes_to_read = bytesToSend;
 	packet.chksum = 0;
@@ -690,8 +639,7 @@ int sendPacket(int seq, struct node *temp, int troll_sock, struct sockaddr_in tr
 	
 	/* Calculate checksum */
 	int chksum = crcFast((char *)&packet, sizeof(packet));
-	printf("Checksum of data: %X\n", chksum);
-	fflush(stdout);
+	printf("Checksum of data: %X\n\n", chksum);
 	
 	/* Attach checksum to troll packet */
 	/* This is checksum with chksum zerod out. Must do same on rec end */
@@ -701,12 +649,13 @@ int sendPacket(int seq, struct node *temp, int troll_sock, struct sockaddr_in tr
 	message.msg_pack = packet;
 	message.msg_header = destaddr;
 	
+	/* record start time */
 	struct timespec startTime;
 	clock_gettime(CLOCK_MONOTONIC, &startTime);
 	ptr->time = startTime;
 	
+	/* send packet to troll */
 	return sendto(troll_sock, (char *)&message, sizeof message, 0, (struct sockaddr *)&trolladdr, sizeof trolladdr);
-	
 }
 
 /*This function creates a start timer message and sends it to the timer process */
@@ -730,6 +679,7 @@ void starttimer(double timeout, int seq_num, int sock, int ret_port, struct sock
 
 /* This function creates a cancel timer message and sends it to the timer process */
 void canceltimer(int seq_num, int sock, struct sockaddr_in server_addr) {
+	double elapsed = 0.0;
 	message_t send_msg;
 	bzero((char*)&send_msg, sizeof(send_msg));
 	send_msg.type = 1;
