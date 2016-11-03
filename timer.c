@@ -250,6 +250,7 @@ int main(int argc, char *argv[]) {
 	bzero((char *)&timeout_response, sizeof timeout_response);
 	timeout_response.sin_family = AF_INET;
 	timeout_response.sin_addr.s_addr = inet_addr(ETA);
+	timeout_response.sin_port = htons(8908);
 	memset(&(sin_addr.sin_zero), '\0', 8);
 
     //The definition of the message received from the driver
@@ -267,6 +268,7 @@ int main(int argc, char *argv[]) {
     typedef struct send {
     	int flag;
     	int seq_num;
+		double time;
     } send_msg_t;
 
 	send_msg_t send_msg;
@@ -299,21 +301,22 @@ int main(int argc, char *argv[]) {
 			 ((end_time.tv_sec - global_start_time.tv_sec )
   					+ ( end_time.tv_nsec - global_start_time.tv_nsec )
   					/ 1E9));*/
-
+		
 		if(NULL != head) {
 			/*UPDATE THE HEAD NODE's TIME*/
 			double elapsed = ( end_time.tv_sec - start_time.tv_sec )
   					+ ( end_time.tv_nsec - start_time.tv_nsec )
   					/ 1E9;
-
+			//printf("Elapsed: %d\n", elapsed);
   			head->time -= elapsed;
+			//printf("Elapsed: %d\n", head->time);
 			//printf("%s%.2f%s%.2f\n", "The head's time ", head->time, " Elapsed time: ", elapsed);
 
 			/*HEAD NODE HAS TIMED OUT*/
 			while (NULL != head && head->time <= 0) {
 				printf("%s%d%s\n", "seq_num number: ", head->seq_num, " has timed out.");
 
-				timeout_response.sin_port = htons(head->port);
+				//timeout_response.sin_port = htons(head->port);
 				send_msg.flag = 2;
 				send_msg.seq_num = head->seq_num;
 
@@ -342,6 +345,7 @@ int main(int argc, char *argv[]) {
 			} else if (recv_msg.type == 1) {
 				printf("%s%d\n", "Received delete request ", recv_msg.seq_num);
 				delete_node(recv_msg.seq_num);
+				
 			}
 			bzero((char*)&recv_msg, sizeof(recv_msg));
 			printf("%s\n", "Just serviced message");
