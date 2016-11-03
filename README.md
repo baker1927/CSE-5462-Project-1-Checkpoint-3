@@ -76,25 +76,23 @@ First start the troll process on the local machine.
 
 Here, you need to designate what port troll will run with 'local troll port'.
 
+Next start the timer process on the local machine.
+
+~$ timer
 
 Next start the tcpd process on the local machine.
 
-~$ tcpd 1 'local host' 'local troll port' 'remote host' 'remote port'
+~$ tcpd 1 
 
-Here, the first argument is 1 to indicate the daemon is run on the local
-machine. 'local host' is the host of the local machine. 'local troll port'
-is the port from above the troll is running on. 'remote host' is the host
-name of the remote machine. 'remote_port' is the port you designate for
-communication between troll and the remote machine.
-
+Here, the only argument is 1 to indicate the daemon is run on the local
+machine. 
 
 Next start the tcpd process on the remote machine.
 
-~$ tcpd 0 'remote port'
+~$ tcpd 0 
 
-Here, the first argument is 0 to indicate the daemon is run on the remote
-machine. 'remote port' is the port specified above.
-
+Here, the argument is 0 to indicate the daemon is run on the remote
+machine. 
 
 Next start the server on the remote machine. 
 
@@ -113,18 +111,11 @@ troll to remote tcpd, and finally remote tcpd to the server.
 
 If any packages are garbled, a checksum error will be displayed.
 
-###Timer and driver
-
-The driver program sends start timer and cancel timer requests to the timer program.
-The timer program infinitely listens for requests from the driver program.
+### Timer 
+The timer program infinitely listens for requests from a client program.
 The timer program maintains a delta timer, and upon receiving a start timer request
-from the driver, inserts a new node into the appropriate location in the delta timer
-list. Upon receiving a cancel timer request from the driver, the timer searches for the
-node to delete in the delta timer list and removes it if it is found or prints an error
-message if it is not. The timer waits a certain amount of time to receive a request from
-the driver. If that wait time times out, the timer reduces the amount of time in the head
-of the delta timer list by the amount of elapsed time. If the time for the head becomes
-less than or equal to 0, the head is removed from the list.
+from the client, inserts a new node into the appropriate location in the delta timer list. Upon receiving a cancel timer request from the client, the timer searches for the node to delete in the delta timer list and removes it if it is found or prints an error message if it is not. The timer waits a certain amount of time to receive a request from
+the client. If that wait time times out, the timer reduces the amount of time in the head of the delta timer list by the amount of elapsed time. If the time for the head becomes less than or equal to 0, the head is removed from the list.
 
 -----------------------------------------------------------------------------
 
