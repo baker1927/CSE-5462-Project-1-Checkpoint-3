@@ -73,8 +73,14 @@ int main(int argc, char *argv[])
 		/* For rtt and rto calculation */
 		struct timeval tv;
 		tv.tv_sec = 0;
-		tv.tv_usec = 100000;
+		tv.tv_usec = 300000;
 		double elapsed = 0.0;
+		
+		
+		struct timeval tv_ftpc;
+		tv_ftpc.tv_sec = 0;
+		tv_ftpc.tv_usec = 50000;
+		
 		
 		/* Init linked list aux structure */
 		struct node *start,*temp;
@@ -99,6 +105,7 @@ int main(int argc, char *argv[])
 		driver_addr.sin_port = htons(DRIVER_PORT); // short, network byte order 
 		driver_addr.sin_addr.s_addr = htonl(INADDR_ANY); 
 		memset(&(timer_addr.sin_zero), '\0', 8); // zero the rest of the struct 
+
 		if(bind(timer_sock, (struct sockaddr *)&driver_addr, sizeof(struct sockaddr_in)) < 0) {
 			perror("Error binding stream socket");
 			exit(1);
@@ -244,7 +251,7 @@ int main(int argc, char *argv[])
 					
 				/* Sets timeout for all calls after first iteration. This allows tcpd to wait for first packet from ftpc */
 				if (firstRun == 0) {
-					if (setsockopt(local_sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+					if (setsockopt(local_sock, SOL_SOCKET, SO_RCVTIMEO, &tv_ftpc, sizeof(tv_ftpc)) < 0) {
 						perror("Error");
 					}
 				}
@@ -336,7 +343,9 @@ int main(int argc, char *argv[])
 							
 						/* NAK recieved. Keep send index at current spot. Redundant assignment for clarity */
 						} else {
-							printf("Unuccessful acknowledgement recieved: %d\n", ack);
+							if (ack < sn) {
+								printf("Unuccessful acknowledgement recieved: %d\n", ack);
+							}
 							sb = sb;
 						}	
 					}
@@ -353,10 +362,10 @@ int main(int argc, char *argv[])
 					bzero((char*)&buffer, sizeof(buffer));
 					
 					/* Listen for timeout message from timer */
-					if (recvfrom(timer_sock, (char*)&buffer, sizeof buffer, MSG_WAITALL, NULL, NULL) < 0) {
-						
+					if (recvfrom(timer_sock, (char*)&buffer, sizeof buffer, MSG_WAITALL, NULL, NULL) > 0) {
+						//printf("**Packet %d timed out.\n", buffer.seq_num);
 						/* if timeout seq no valid resend packet */
-						if (buffer.seq_num < sn && buffer.seq_num > sb) {
+						if (buffer.seq_num < sn && buffer.seq_num >= sb) {
 							
 							/* Create and send packet */
 							printf("Packet %d timed out.\n", buffer.seq_num);
@@ -384,7 +393,7 @@ int main(int argc, char *argv[])
 					amtToTroll = sendPacket(sb, temp, troll_sock, trolladdr, destaddr);
 					
 					/* Start timer with rto timeout*/
-					starttimer(rto, 1, timer_sock, DRIVER_PORT, timer_addr);
+					starttimer(rto, sb, timer_sock, DRIVER_PORT, timer_addr);
 					
 					if (amtToTroll != sizeof message) {
 						perror("totroll sendto");
